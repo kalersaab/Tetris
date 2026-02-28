@@ -1,5 +1,6 @@
 #include <SFML/Graphics.hpp>
 #include <ctime>
+#include <cstring>
 #include <string>
 
 using namespace sf;
@@ -26,10 +27,9 @@ Color colors[8] = {
 struct Point { int x, y; };
 Point a[4], b[4];
 
-int colorNum, nextFigure;
-int score = 0;
-int level = 1;
-int totalLines = 0;
+int colorNum;
+bool gameOver = false;
+int score = 0, level = 1, totalLines = 0;
 
 bool check() {
     for (int i = 0; i < 4; i++) {
@@ -39,7 +39,7 @@ bool check() {
     return true;
 }
 
-void spawnPiece(int fig) {
+void spawn(int fig) {
     colorNum = fig + 1;
     for (int i = 0; i < 4; i++) {
         a[i].x = figures[fig][i] % 2 + N / 2 - 1;
@@ -54,24 +54,18 @@ int main() {
     window.setFramerateLimit(60);
 
     Font font;
-    if (!font.loadFromFile("arial.ttf")) {
-        return -1; // font not found → stop program
-    }
-    font.loadFromFile("arial.ttf"); // put arial.ttf next to exe
+    if (!font.loadFromFile("arial.ttf"))
+        return -1;
 
-    Text scoreText("", font, 18);
-    scoreText.setPosition(320, 220);
+    Text info("", font, 18);
+    info.setPosition(330, 220);
 
-    Clock clock;
-    float timer = 0;
-    float delay = 0.5f;
-    int dx = 0;
-    bool rotate = false;
-
-    nextFigure = rand() % 7;
-    int current = nextFigure;
-    nextFigure = rand() % 7;
-    spawnPiece(current);
+    Text over("GAME OVER\nPress R to Restart", font, 28);
+    over.setFillColor(Color::White);
+    over.setStyle(Text::Bold);
+    FloatRect ob = over.getLocalBounds();
+    over.setOrigin(ob.width / 2, ob.height / 2);
+    over.setPosition(N * SIZE / 2, M * SIZE / 2);
 
     RectangleShape block(Vector2f(SIZE - 1, SIZE - 1));
     block.setOutlineThickness(1);
@@ -81,7 +75,17 @@ int main() {
     previewBg.setPosition(N * SIZE + 20, 50);
     previewBg.setFillColor(Color(20,20,20));
     previewBg.setOutlineThickness(2);
-    previewBg.setOutlineColor(Color(100,100,100));
+    previewBg.setOutlineColor(Color(120,120,120));
+
+    Clock clock;
+    float timer = 0, delay = 0.5f;
+
+    int dx = 0;
+    bool rotate = false;
+
+    int next = rand() % 7;
+    int current = rand() % 7;
+    spawn(current);
 
     while (window.isOpen()) {
         float time = clock.restart().asSeconds();
@@ -89,84 +93,95 @@ int main() {
 
         Event e;
         while (window.pollEvent(e)) {
-            if (e.type == Event::Closed) window.close();
+            if (e.type == Event::Closed)
+                window.close();
+
             if (e.type == Event::KeyPressed) {
-                if (e.key.code == Keyboard::Up) rotate = true;
-                else if (e.key.code == Keyboard::Left) dx = -1;
-                else if (e.key.code == Keyboard::Right) dx = 1;
+                if (!gameOver) {
+                    if (e.key.code == Keyboard::Left) dx = -1;
+                    if (e.key.code == Keyboard::Right) dx = 1;
+                    if (e.key.code == Keyboard::Up) rotate = true;
+                }
+
+                if (e.key.code == Keyboard::R) {
+                    memset(field, 0, sizeof(field));
+                    score = level = totalLines = 0;
+                    delay = 0.5f;
+                    gameOver = false;
+                    current = rand() % 7;
+                    next = rand() % 7;
+                    spawn(current);
+                }
             }
         }
 
-        // Move
-        for (int i = 0; i < 4; i++) { b[i] = a[i]; a[i].x += dx; }
-        if (!check()) for (int i = 0; i < 4; i++) a[i] = b[i];
-
-        // Rotate
-        if (rotate) {
-            Point p = a[1];
-            for (int i = 0; i < 4; i++) {
-                int x = a[i].y - p.y;
-                int y = a[i].x - p.x;
-                a[i].x = p.x - x;
-                a[i].y = p.y + y;
-            }
+        if (!gameOver) {
+            // Move
+            for (int i = 0; i < 4; i++) { b[i] = a[i]; a[i].x += dx; }
             if (!check()) for (int i = 0; i < 4; i++) a[i] = b[i];
-        }
 
-        if (Keyboard::isKeyPressed(Keyboard::Down)) {
-            for (int i = 0; i < 4; i++) {
-                b[i] = a[i];
-                a[i].y += 1;
-            }
-            if (!check())
-                for (int i = 0; i < 4; i++)
-                    a[i] = b[i];
-        }
-        // Gravity
-        if (timer > delay) {
-            for (int i = 0; i < 4; i++) {
-                b[i] = a[i];
-                a[i].y++;
+            // Rotate
+            if (rotate) {
+                for (int i = 0; i < 4; i++) b[i] = a[i];
+                Point p = a[1];
+                for (int i = 0; i < 4; i++) {
+                    int x = a[i].y - p.y;
+                    int y = a[i].x - p.x;
+                    a[i].x = p.x - x;
+                    a[i].y = p.y + y;
+                }
+                if (!check()) for (int i = 0; i < 4; i++) a[i] = b[i];
             }
 
-            if (!check()) {
-                for (int i = 0; i < 4; i++)
-                    field[b[i].y][b[i].x] = colorNum;
+            // Soft drop
+            if (Keyboard::isKeyPressed(Keyboard::Down))
+                timer = delay;
 
-                current = nextFigure;
-                nextFigure = rand() % 7;
-                spawnPiece(current);
+            // Gravity
+            if (timer > delay) {
+                for (int i = 0; i < 4; i++) {
+                    b[i] = a[i];
+                    a[i].y++;
+                }
+
+                if (!check()) {
+                    for (int i = 0; i < 4; i++)
+                        field[b[i].y][b[i].x] = colorNum;
+
+                    current = next;
+                    next = rand() % 7;
+                    spawn(current);
+
+                    if (!check()) gameOver = true;
+                }
+                timer = 0;
             }
-            timer = 0;
-        }
 
-        // Line clear + score
-        int k = M - 1;
-        int lines = 0;
-        for (int i = M - 1; i >= 0; i--) {
-            int count = 0;
-            for (int j = 0; j < N; j++) {
-                if (field[i][j]) count++;
-                field[k][j] = field[i][j];
+            // Line clear
+            int k = M - 1, lines = 0;
+            for (int i = M - 1; i >= 0; i--) {
+                int count = 0;
+                for (int j = 0; j < N; j++) {
+                    if (field[i][j]) count++;
+                    field[k][j] = field[i][j];
+                }
+                if (count < N) k--;
+                else lines++;
             }
-            if (count < N) k--;
-            else lines++;
-        }
 
-        if (lines > 0) {
-            totalLines += lines;
-            level = totalLines / 10 + 1;
-
-            static int scores[] = {0, 100, 300, 500, 800};
-            score += scores[lines] * level;
-
-            delay = std::max(0.1f, 0.5f - level * 0.03f);
+            if (lines) {
+                totalLines += lines;
+                level = totalLines / 10 + 1;
+                static int scores[] = {0,100,300,500,800};
+                score += scores[lines] * level;
+                delay = std::max(0.1f, 0.5f - level * 0.03f);
+            }
         }
 
         dx = 0;
         rotate = false;
 
-        scoreText.setString(
+        info.setString(
             "Score: " + std::to_string(score) +
             "\nLevel: " + std::to_string(level)
         );
@@ -183,23 +198,27 @@ int main() {
             }
 
         // Current piece
-        for (int i = 0; i < 4; i++) {
-            block.setPosition(a[i].x * SIZE, a[i].y * SIZE);
-            block.setFillColor(colors[colorNum]);
-            window.draw(block);
+        if (!gameOver) {
+            for (int i = 0; i < 4; i++) {
+                block.setPosition(a[i].x * SIZE, a[i].y * SIZE);
+                block.setFillColor(colors[colorNum]);
+                window.draw(block);
+            }
         }
 
         // Next preview
         window.draw(previewBg);
         for (int i = 0; i < 4; i++) {
-            int x = figures[nextFigure][i] % 2;
-            int y = figures[nextFigure][i] / 2;
+            int x = figures[next][i] % 2;
+            int y = figures[next][i] / 2;
             block.setPosition(N * SIZE + 20 + x * SIZE, 50 + y * SIZE);
-            block.setFillColor(colors[nextFigure + 1]);
+            block.setFillColor(colors[next + 1]);
             window.draw(block);
         }
 
-        window.draw(scoreText);
+        window.draw(info);
+        if (gameOver) window.draw(over);
+
         window.display();
     }
     return 0;
